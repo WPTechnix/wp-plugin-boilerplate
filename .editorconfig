@@ -1,0 +1,48 @@
+# top-most EditorConfig file
+root = true
+
+# Default for all files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# PHP files.
+#
+# Tabs, because the WPTechnix and WPTechnix-PSR4 standards follow WordPress core
+# style. `scripts/setup --style psr` flips this to 4 spaces. Keep this in step with
+# phpcs.xml.dist, or CI's editorconfig-checker and PHPCS will contradict each other.
+[*.php]
+indent_style = tab
+indent_size = 4
+max_line_length = 120
+insert_final_newline = true
+
+# YAML (e.g., PHPStan, ECS)
+[*.{yml,yaml,neon}]
+indent_style = space
+indent_size = 2
+
+# JSON files
+[*.json]
+indent_style = space
+indent_size = 2
+
+# Markdown files
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+
+# Shell scripts. They are extensionless POSIX sh. `scripts/install-wp-tests` keeps
+# upstream's two-space style; the rest use four.
+[{scripts/dev,scripts/scope,scripts/setup,scripts/lib/runtime}]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+
+[scripts/install-wp-tests]
+indent_style = space
+indent_size = 2
+end_of_line = lf

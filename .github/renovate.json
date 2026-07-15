@@ -1,0 +1,46 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "UTC",
+  "schedule": ["before 09:00 on monday"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "semanticCommits": "enabled",
+  "rangeStrategy": "replace",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 09:00 on the first day of the month"],
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "This is a plugin scaffold (composer type: project) with a committed composer.lock and no runtime dependencies of its own — every Composer and npm dependency is dev/build tooling. Automerge minor & patch once CI (PHPUnit + PHPStan + PHPCS + commitlint) is green.",
+      "matchDepTypes": ["require-dev", "devDependencies", "dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "semanticCommitType": "build",
+      "automerge": true
+    },
+    {
+      "description": "GitHub Actions: group into one PR, pin to commit SHAs, and automerge minor/patch/digest.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "semanticCommitType": "ci",
+      "addLabels": ["ci"]
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "automerge": true
+    },
+    {
+      "description": "Major bumps always need a human — never automerge, and flag them.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "addLabels": ["major-update"]
+    }
+  ]
+}

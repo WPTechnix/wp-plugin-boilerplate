@@ -1,0 +1,29 @@
+<?xml version="1.0" ?>
+<ruleset name="WP Plugin Boilerplate PHPCS">
+    <description>WP Plugin Boilerplate coding standards.</description>
+
+    <rule ref="WPTechnix-PSR4" />
+    <rule ref="WPTechnix-Strict" />
+
+    <file>plugin</file>
+
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/vendor-prefixed/*</exclude-pattern>
+    <exclude-pattern>*/node_modules/*</exclude-pattern>
+
+    <arg name="extensions" value="php" />
+    <arg name="colors" />
+    <arg name="cache" value=".phpcs.cache" />
+    <arg value="sp" />
+
+    <config name="testVersion" value="8.0-" />
+
+    <!-- Must match the `Text Domain:` header in the main plugin file. -->
+    <rule ref="WordPress.WP.I18n">
+        <properties>
+            <property name="text_domain" type="array">
+                <element value="wp-plugin-boilerplate" />
+            </property>
+        </properties>
+    </rule>
+</ruleset>

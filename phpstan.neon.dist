@@ -1,0 +1,26 @@
+parameters:
+    level: 8
+
+    phpVersion:
+        min: 80000
+        max: 80500
+
+    tmpDir: .phpstan.cache
+
+    paths:
+        - plugin/src
+        - plugin/wp-plugin-boilerplate.php
+        - plugin/uninstall.php
+
+    scanFiles:
+        - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+        - vendor/php-stubs/woocommerce-stubs/woocommerce-packages-stubs.php
+
+    # ignoreErrors:
+    #     - message: '#Parameter \#1 \$query of method wpdb::prepare\(\) expects literal-string#'
+
+    treatPhpDocTypesAsCertain: false
+
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+    - vendor/phpstan/phpstan-strict-rules/rules.neon

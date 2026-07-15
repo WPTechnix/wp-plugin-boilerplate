@@ -1,0 +1,152 @@
+#!/usr/bin/env sh
+#
+# install-wp-tests — download and configure the WordPress PHPUnit test suite.
+#
+# A dependency-light, svn-free rewrite of WordPress core's install-wp-tests.sh: it
+# pulls WordPress core and the test framework (tests/phpunit/{includes,data}) from
+# wordpress.org and the WordPress/wordpress-develop GitHub archive, then writes a
+# wp-tests-config.php pointing at the given database.
+#
+# It is environment-agnostic (needs only curl-or-wget, tar and a MySQL client on
+# PATH) so the same script serves three callers:
+#   * the tools Docker image, which BAKES the download at build time (skip-db-create);
+#   * `./scripts/dev test:setup`, which re-runs it against the live database to write
+#     the config and create the test DB (downloads are skipped as already present);
+#   * GitHub Actions, which runs it per matrix combination against a MySQL service.
+#
+# Usage:
+#   install-wp-tests <db-name> <db-user> <db-pass> [db-host] [wp-version] [skip-db-create]
+#
+# wp-version: a release like 6.6.2, or "latest", or "nightly"/"trunk".
+# Honours WP_TESTS_DIR and WP_CORE_DIR (default /tmp/wordpress-tests-lib and
+# /tmp/wordpress) so the Docker image can bake the suite into /opt.
+#
+set -eu
+
+DB_NAME="${1:?usage: install-wp-tests <db-name> <db-user> <db-pass> [db-host] [wp-version] [skip-db-create]}"
+DB_USER="${2:?missing db-user}"
+DB_PASS="${3:-}"
+DB_HOST="${4:-localhost}"
+WP_VERSION="${5:-latest}"
+SKIP_DB_CREATE="${6:-false}"
+
+WP_TESTS_DIR="${WP_TESTS_DIR:-/tmp/wordpress-tests-lib}"
+WP_CORE_DIR="${WP_CORE_DIR:-/tmp/wordpress}"
+
+TMPDIR="${TMPDIR:-/tmp}"
+
+# --- Download helper (curl or wget) ----------------------------------------------
+if command -v curl >/dev/null 2>&1; then
+  download() { curl -fsSL "$1" -o "$2"; }
+  fetch() { curl -fsSL "$1"; }
+elif command -v wget >/dev/null 2>&1; then
+  download() { wget -nv -O "$2" "$1"; }
+  fetch() { wget -nv -O - "$1"; }
+else
+  echo "error: neither curl nor wget is available." >&2
+  exit 127
+fi
+
+# --- Resolve the WordPress version -----------------------------------------------
+case "$WP_VERSION" in
+  latest)
+    # The stable-check API maps every release to a status; exactly one is "latest".
+    RESOLVED="$(fetch 'https://api.wordpress.org/core/stable-check/1.0/' \
+      | tr ',' '\n' \
+      | sed -n 's/.*"\([0-9][0-9.]*\)"[[:space:]]*:[[:space:]]*"latest".*/\1/p' \
+      | head -n 1)"
+    [ -n "$RESOLVED" ] || { echo "error: could not resolve the latest WP version." >&2; exit 1; }
+    ;;
+  nightly | trunk)
+    RESOLVED="trunk"
+    ;;
+  *)
+    RESOLVED="$WP_VERSION"
+    ;;
+esac
+
+echo "==> WordPress version: $RESOLVED"
+
+# --- Download WordPress core -----------------------------------------------------
+if [ -d "$WP_CORE_DIR" ] && [ -f "$WP_CORE_DIR/wp-load.php" ]; then
+  echo "==> WordPress core already present in $WP_CORE_DIR (skipping download)."
+else
+  echo "==> Downloading WordPress core to $WP_CORE_DIR..."
+  mkdir -p "$WP_CORE_DIR"
+  if [ "$RESOLVED" = "trunk" ]; then
+    CORE_URL="https://wordpress.org/nightly-builds/wordpress-latest.zip"
+    download "$CORE_URL" "$TMPDIR/wordpress.zip"
+    # Nightly ships as a zip; unzip then flatten the wordpress/ top directory.
+    ( cd "$TMPDIR" && rm -rf wordpress && unzip -q wordpress.zip )
+    cp -a "$TMPDIR/wordpress/." "$WP_CORE_DIR/"
+    rm -rf "$TMPDIR/wordpress" "$TMPDIR/wordpress.zip"
+  else
+    CORE_URL="https://wordpress.org/wordpress-${RESOLVED}.tar.gz"
+    download "$CORE_URL" "$TMPDIR/wordpress.tar.gz"
+    tar --strip-components=1 -xzf "$TMPDIR/wordpress.tar.gz" -C "$WP_CORE_DIR"
+    rm -f "$TMPDIR/wordpress.tar.gz"
+  fi
+fi
+
+# --- Download the PHPUnit test framework -----------------------------------------
+# tests/phpunit/{includes,data} + wp-tests-config-sample.php from wordpress-develop.
+if [ -d "$WP_TESTS_DIR/includes" ]; then
+  echo "==> WP test framework already present in $WP_TESTS_DIR (skipping download)."
+else
+  echo "==> Downloading the WP test framework to $WP_TESTS_DIR..."
+  mkdir -p "$WP_TESTS_DIR"
+  if [ "$RESOLVED" = "trunk" ]; then
+    DEVELOP_URL="https://github.com/WordPress/wordpress-develop/archive/refs/heads/trunk.tar.gz"
+  else
+    DEVELOP_URL="https://github.com/WordPress/wordpress-develop/archive/refs/tags/${RESOLVED}.tar.gz"
+  fi
+  download "$DEVELOP_URL" "$TMPDIR/wp-develop.tar.gz"
+  # Extract only the PHPUnit pieces. GNU tar needs --wildcards for glob patterns; the
+  # archive's top directory is wordpress-develop-<ref>/, so tests/phpunit/{includes,data}
+  # is 3 path components deep and wp-tests-config-sample.php is 1.
+  tar -xzf "$TMPDIR/wp-develop.tar.gz" -C "$WP_TESTS_DIR" \
+    --strip-components=3 --wildcards --no-same-owner \
+    '*/tests/phpunit/includes/*' '*/tests/phpunit/data/*'
+  tar -xzf "$TMPDIR/wp-develop.tar.gz" -C "$WP_TESTS_DIR" \
+    --strip-components=1 --wildcards --no-same-owner \
+    '*/wp-tests-config-sample.php'
+  rm -f "$TMPDIR/wp-develop.tar.gz"
+fi
+
+# --- Write wp-tests-config.php (always, so credentials stay current) -------------
+echo "==> Writing $WP_TESTS_DIR/wp-tests-config.php..."
+CONFIG="$WP_TESTS_DIR/wp-tests-config.php"
+cp "$WP_TESTS_DIR/wp-tests-config-sample.php" "$CONFIG"
+
+# ABSPATH in the config must point at the core install, with a trailing slash.
+ABSPATH_VALUE="$WP_CORE_DIR/"
+
+# Portable in-place edits (BSD/GNU sed differ on -i), so write to a temp file.
+sed \
+  -e "s|dirname( __FILE__ ) . '/src/'|'${ABSPATH_VALUE}'|" \
+  -e "s|youremptytestdbnamehere|${DB_NAME}|" \
+  -e "s|yourusernamehere|${DB_USER}|" \
+  -e "s|yourpasswordhere|${DB_PASS}|" \
+  -e "s|localhost|${DB_HOST}|" \
+  "$CONFIG" > "$CONFIG.tmp"
+mv "$CONFIG.tmp" "$CONFIG"
+
+# --- Create the test database ----------------------------------------------------
+if [ "$SKIP_DB_CREATE" = "true" ]; then
+  echo "==> Skipping database creation (skip-db-create=true)."
+else
+  echo "==> Creating database '$DB_NAME' on $DB_HOST..."
+  # Build the connection flags, splitting an optional :port suffix. Using the positional
+  # parameters (set --) keeps each flag a separate argument without relying on unquoted
+  # word-splitting. The script's own arguments are already consumed into named vars above.
+  case "$DB_HOST" in
+    *:*) set -- --host="${DB_HOST%%:*}" --port="${DB_HOST##*:}" --protocol=tcp ;;
+    *)   set -- --host="${DB_HOST}" --protocol=tcp ;;
+  esac
+  mysqladmin create "$DB_NAME" --user="$DB_USER" --password="$DB_PASS" "$@" 2>/dev/null \
+    || echo "    (database already exists; continuing)"
+fi
+
+echo "==> WP test suite ready."
+echo "    WP_CORE_DIR=$WP_CORE_DIR"
+echo "    WP_TESTS_DIR=$WP_TESTS_DIR"

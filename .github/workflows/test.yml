@@ -1,0 +1,188 @@
+name: Test
+
+# Focus: Unit tests cover PHP versions (fast & cheap).
+# Integration tests cover critical database versions (MySQL & MariaDB)
+# with a fixed PHP + WordPress baseline – catching schema/query issues.
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.gitignore'
+      - '.gitattributes'
+      - 'LICENSE'
+      - '.editorconfig'
+      - '.github/dependabot.yml'
+      - '.github/workflows/commitlint.yml'
+      - '.github/workflows/lint.yml'
+      - '.github/workflows/release.yml'
+      - '.husky/**'
+      - 'commitlint.config.cjs'
+      - 'package.json'
+      - 'phpcs.xml.dist'
+      - 'phpstan.neon.dist'
+      - 'scripts/docker/**'
+      - 'scripts/setup'
+      - 'scripts/lib/runtime'
+      - 'scripts/dev'
+      - 'scripts/scope'
+
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.gitignore'
+      - '.gitattributes'
+      - 'LICENSE'
+      - '.editorconfig'
+      - '.github/dependabot.yml'
+      - '.github/workflows/commitlint.yml'
+      - '.github/workflows/lint.yml'
+      - '.github/workflows/release.yml'
+      - '.husky/**'
+      - 'commitlint.config.cjs'
+      - 'package.json'
+      - 'scoper.inc.php'
+      - 'phpcs.xml.dist'
+      - 'phpstan.neon.dist'
+      - 'scripts/docker/**'
+      - 'scripts/setup'
+      - 'scripts/lib/runtime'
+      - 'scripts/dev'
+      - 'scripts/scope'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Unit Tests – all supported PHP versions, no database overhead
+  # --------------------------------------------------------------------------
+  unit:
+    name: Unit Tests (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.0', '8.1', '8.2', '8.3', '8.4', '8.5']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          extensions: dom, mbstring
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Run unit tests
+        run: vendor/bin/phpunit --configuration phpunit-unit.xml.dist
+
+  # --------------------------------------------------------------------------
+  # Integration Tests – database version matrix
+  # Uses a fixed PHP (8.2) and WordPress (latest) to isolate DB effects.
+  # --------------------------------------------------------------------------
+  integration:
+    name: Integration (PHP 8.2, WP latest, DB ${{ matrix.db }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Critical database versions:
+        #   MySQL 5.7  – still widely used
+        #   MySQL 8.0  – current stable
+        #   MariaDB 10.3 – minimum required by WordPress (legacy)
+        #   MariaDB 10.6 – LTS (common)
+        #   MariaDB 10.11 – latest LTS
+        db:
+          - mysql:5.7
+          - mysql:8.0
+          - mariadb:10.3
+          - mariadb:10.6
+          - mariadb:10.11
+
+    services:
+      mysql:
+        image: ${{ matrix.db }}
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      WP_TESTS_DIR: /tmp/wordpress-tests-lib
+      WP_CORE_DIR: /tmp/wordpress
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mysqli, dom, mbstring
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      # Cache the WordPress test suite (same for all DB versions)
+      - name: Cache WordPress test suite
+        uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/wordpress
+            /tmp/wordpress-tests-lib
+          key: wp-suite-latest-${{ runner.os }}
+          restore-keys: wp-suite-latest-${{ runner.os }}
+
+      - name: Install WordPress test suite
+        run: bash scripts/install-wp-tests wordpress_test root root 127.0.0.1 latest
+
+      - name: Run integration tests
+        run: vendor/bin/phpunit --configuration phpunit-integration.xml.dist
