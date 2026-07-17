@@ -20,8 +20,6 @@ final class Plugin {
 
 	/**
 	 * Plugin version.
-	 *
-	 * @var string
 	 */
 	private string $version;
 

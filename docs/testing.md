@@ -99,11 +99,11 @@ use Yoast\WPTestUtils\BrainMonkey\TestCase;
  */
 final class PluginTest extends TestCase {
 
-	public function test_boot_registers_the_init_action(): void {
-		Actions\expectAdded( 'init' )->once();
+  public function test_boot_registers_the_init_action(): void {
+    Actions\expectAdded( 'init' )->once();
 
-		( new Plugin( '1.0.0' ) )->boot();
-	}
+    ( new Plugin( '1.0.0' ) )->boot();
+  }
 }
 ```
 
@@ -127,11 +127,11 @@ use Yoast\WPTestUtils\WPIntegration\TestCase;
  */
 final class PluginTest extends TestCase {
 
-	public function test_boot_registers_an_init_hook(): void {
-		$this->assertNotFalse(
-			has_action( 'init', [ wp_plugin_boilerplate(), 'on_init' ] )
-		);
-	}
+  public function test_boot_registers_an_init_hook(): void {
+    $this->assertNotFalse(
+      has_action( 'init', [ wp_plugin_boilerplate(), 'on_init' ] )
+    );
+  }
 }
 ```
 
