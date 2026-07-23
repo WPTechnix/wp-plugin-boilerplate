@@ -15,7 +15,7 @@ use Yoast\WPTestUtils\WPIntegration\TestCase;
 /**
  * @covers \WPPluginBoilerplate\Plugin
  */
-final class PluginTest extends TestCase {
+final class Plugin_Test extends TestCase {
 
 	/**
 	 * The plugin's classes should be autoloadable inside WordPress.

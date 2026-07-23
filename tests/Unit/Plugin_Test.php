@@ -16,7 +16,7 @@ use Yoast\WPTestUtils\BrainMonkey\TestCase;
 /**
  * @covers \WPPluginBoilerplate\Plugin
  */
-final class PluginTest extends TestCase {
+final class Plugin_Test extends TestCase {
 
 	/**
 	 * boot() should register the plugin's init action.
